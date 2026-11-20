@@ -81,10 +81,27 @@ def test_milestone_4(tmp_path):
 
 
 # Milestone 5: Merge LoRA adapter and perform inference on new clauses
-@pytest.mark.skip(reason="remove this line when you start milestone 5")
-def test_milestone_5():
-    raise NotImplementedError("write the test for milestone 5")
+def test_milestone_5(tmp_path):
+    from app.core import LoRAConv1D, load_merged_tagger, milestone_1, milestone_4, milestone_5
 
+    data_dir = tmp_path / "data"
+    out_dir = tmp_path / "artifacts"
+    milestone_1(output_dir=data_dir, samples_per_class=3, use_hf=False)
+    milestone_4(data_dir=data_dir, output_dir=out_dir, epochs=1, batch_size=4, rank=4, alpha=8, max_steps=2)
+
+    ckpt_path = out_dir / "lora_adapter.pt"
+    bundle = load_merged_tagger(ckpt_path)
+    # Confirm LoRAConv1D wrappers were folded back into standard Conv1D layers
+    assert not isinstance(bundle["model"].transformer.h[0].attn.c_attn, LoRAConv1D)
+
+    res = milestone_5(
+        clauses=["This Agreement is governed by the laws of New York."],
+        checkpoint_path=ckpt_path,
+    )
+    assert res["merged"] is True
+    assert res["num_predictions"] == 1
+    assert res["predictions"][0]["predicted_tag"] in TARGET_TAGS
+    assert 0.0 <= res["predictions"][0]["confidence"] <= 1.0
 
 # Milestone 6: Evaluate tagging accuracy and model efficiency
 @pytest.mark.skip(reason="remove this line when you start milestone 6")

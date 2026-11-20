@@ -447,9 +447,116 @@ def milestone_4(
     }
 
 
+def merge_lora_weights(model: nn.Module) -> nn.Module:
+    """Fold LoRAConv1D matrices (W_0 + scaling * A @ B) back into standard base Conv1D layers."""
+    for block in model.transformer.h:
+        for attr in ("c_attn", "c_proj"):
+            layer = getattr(block.attn, attr)
+            if isinstance(layer, LoRAConv1D):
+                with torch.no_grad():
+                    delta = (layer.lora_A @ layer.lora_B) * layer.scaling
+                    layer.base_layer.weight.add_(delta.to(layer.base_layer.weight.dtype))
+                setattr(block.attn, attr, layer.base_layer)
+    return model
+
+
+def load_merged_tagger(checkpoint_path: str | Path = "artifacts/lora_adapter.pt") -> dict[str, Any]:
+    """Load trained LoRA adapter + tag embeddings, inject, restore weights, and merge into base GPT-2."""
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    tags = ckpt["tags"]
+    orig_vocab_size = ckpt["orig_vocab_size"]
+
+    m2 = milestone_2(tags=tags)
+    m3 = milestone_3(
+        model=m2["model"],
+        tokenizer=m2["tokenizer"],
+        rank=ckpt["rank"],
+        alpha=ckpt["alpha"],
+    )
+    model = m3["model"]
+    tokenizer = m3["tokenizer"]
+
+    # Restore trained LoRA matrices and the 8 learned <Tag> token embedding rows
+    model.load_state_dict(ckpt["lora_state_dict"], strict=False)
+    with torch.no_grad():
+        model.transformer.wte.weight[orig_vocab_size:].copy_(ckpt["tag_embeddings"])
+
+    # Permanently fold LoRA weights into base Conv1D layers for zero-overhead inference
+    model = merge_lora_weights(model)
+    model.eval()
+
+    tag_to_id = {label: tokenizer.convert_tokens_to_ids(tag_token(label)) for label in tags}
+    return {
+        "model": model,
+        "tokenizer": tokenizer,
+        "tags": tags,
+        "tag_to_id": tag_to_id,
+    }
+
+
+def predict_clause_tag(
+    clause: str,
+    model: nn.Module,
+    tokenizer: Any,
+    tag_to_id: dict[str, int],
+    device: torch.device | None = None,
+) -> dict[str, Any]:
+    """Score the 8 atomic <Tag> tokens on the next-token distribution and return the top tag + probabilities."""
+    active_device = device or next(model.parameters()).device
+    clean_clause = " ".join(clause.strip().split())
+    prompt = f"Clause: {clean_clause}\nTag:"
+
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=184).to(active_device)
+    with torch.no_grad():
+        logits = model(**inputs).logits[0, -1, :]
+
+    ordered_labels = list(tag_to_id.keys())
+    ordered_ids = [tag_to_id[lbl] for lbl in ordered_labels]
+    tag_logits = logits[ordered_ids]
+    probs = torch.softmax(tag_logits, dim=-1).cpu().tolist()
+
+    scores = {lbl: round(float(p), 4) for lbl, p in zip(ordered_labels, probs)}
+    best_label = max(scores, key=scores.get)
+    return {
+        "clause": clean_clause,
+        "predicted_tag": best_label,
+        "confidence": scores[best_label],
+        "scores": dict(sorted(scores.items(), key=lambda kv: kv[1], reverse=True)),
+    }
+
+
 # --- Milestone 5: Merge LoRA adapter and perform inference on new clauses
-def milestone_5():  # TODO(milestone 5)
-    raise NotImplementedError("TODO(milestone 5)")
+def milestone_5(
+    clauses: list[str] | None = None,
+    checkpoint_path: str | Path = "artifacts/lora_adapter.pt",
+) -> dict[str, Any]:
+    """Merge the trained LoRA adapter into GPT-2 and classify new unseen legal clauses."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    bundle = load_merged_tagger(checkpoint_path=checkpoint_path)
+    model = bundle["model"].to(device)
+    tokenizer = bundle["tokenizer"]
+    tag_to_id = bundle["tag_to_id"]
+
+    sample_clauses = clauses or [
+        "This Agreement shall be governed by and construed in accordance with the laws of the State of California.",
+        "Recipient shall maintain all Proprietary Information in strict confidence for five (5) years.",
+        "Either party may terminate this Agreement upon thirty (30) days written notice.",
+        "Supplier shall indemnify and hold harmless Buyer from all third-party claims and damages.",
+        "All notices under this Contract must be sent in writing via certified mail.",
+        "Vendor warrants that the Software will perform materially in accordance with the documentation.",
+        "Client shall pay all undisputed invoices within thirty (30) days of receipt.",
+        "If any provision of this Agreement is found invalid, the remaining provisions remain enforceable.",
+    ]
+
+    predictions = [
+        predict_clause_tag(clause, model=model, tokenizer=tokenizer, tag_to_id=tag_to_id, device=device)
+        for clause in sample_clauses
+    ]
+    return {
+        "merged": True,
+        "num_predictions": len(predictions),
+        "predictions": predictions,
+    }
 
 
 # --- Milestone 6: Evaluate tagging accuracy and model efficiency

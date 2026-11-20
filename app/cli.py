@@ -1,7 +1,7 @@
 """Command-line entry point: `python -m app.cli --help`."""
 import argparse
 
-from app.core import milestone_1, milestone_2, milestone_3, milestone_4
+from app.core import milestone_1, milestone_2, milestone_3, milestone_4, milestone_5
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -27,6 +27,10 @@ def main(argv: list[str] | None = None) -> None:
     train_cmd.add_argument("--lr", type=float, default=5e-4)
     train_cmd.add_argument("--rank", type=int, default=8)
     train_cmd.add_argument("--alpha", type=int, default=16)
+
+    tag_cmd = sub.add_parser("tag", help="Milestone 5: merge LoRA adapter and classify legal clauses")
+    tag_cmd.add_argument("--clause", type=str, default=None, help="Single custom legal clause to classify")
+    tag_cmd.add_argument("--checkpoint", type=str, default="artifacts/lora_adapter.pt")
 
     args = parser.parse_args(argv)
     if args.command == "hello":
@@ -57,6 +61,11 @@ def main(argv: list[str] | None = None) -> None:
             alpha=args.alpha,
         )
         print(f"Training complete: {res}")
+    elif args.command == "tag":
+        clauses = [args.clause] if args.clause else None
+        res = milestone_5(clauses=clauses, checkpoint_path=args.checkpoint)
+        for item in res["predictions"]:
+            print(f"[{item['predicted_tag']}] ({item['confidence']*100:.1f}%) -> {item['clause']}")
 
 
 if __name__ == "__main__":

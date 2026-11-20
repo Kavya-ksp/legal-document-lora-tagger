@@ -22,7 +22,7 @@ Tick these off as you go, and commit after each one.
       Hint: Implement the LoRA adapter and inject it into GPT-2's attention layers, as shown in the `lfllm-lflora` drill.
 - [X] **4. Fine-tune GPT-2 with LoRA on the clause dataset**  
       Hint: Fine-tune GPT-2 using the LoRA adapter on your prepared clause dataset, applying techniques from `lfllm-lflegalgpt` and `lfllm-lflora`.
-- [ ] **5. Merge LoRA adapter and perform inference on new clauses**  
+- [X] **5. Merge LoRA adapter and perform inference on new clauses**  
       Hint: Merge the LoRA adapter weights back into the base GPT-2 model and perform inference on new legal clauses.
 - [ ] **6. Evaluate tagging accuracy and model efficiency**  
       Hint: Evaluate the accuracy of your tagging and the efficiency improvements gained from using LoRA.
