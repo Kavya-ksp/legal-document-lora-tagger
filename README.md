@@ -52,3 +52,42 @@ reaches GitHub, treat it as leaked and make a new one.
 - Experiment with different LoRA ranks or target layers to optimize performance.
 - Implement a user interface for easier document input and tagged output viewing.
 - Extend the model to recognize and tag a wider variety of legal clause types beyond the initial dataset.
+
+
+## CLI Usage
+
+Run each stage of the pipeline from the project root (with `.venv` activated):
+
+```bash
+# Milestone 1: Prepare stratified LEDGAR legal clause dataset
+python -m app.cli prepare --samples-per-class 120
+
+# Milestone 2: Extend GPT-2 tokenizer and embeddings with 8 custom <Tag> tokens
+python -m app.cli extend
+
+# Milestone 3: Inject LoRAConv1D adapters into GPT-2 attention layers
+python -m app.cli inject-lora --rank 8 --alpha 16
+
+# Milestone 4: Fine-tune LoRA adapters and <Tag> embeddings using masked tag loss
+python -m app.cli train --epochs 3
+
+# Milestone 5: Merge LoRA weights into base GPT-2 and classify new clauses
+python -m app.cli tag
+python -m app.cli tag --clause "All disputes shall be resolved under the laws of Texas."
+
+# Milestone 6: Evaluate held-out accuracy, Macro-F1, parameter efficiency, and latency
+python -m app.cli evaluate
+
+
+## Evaluation Results
+
+Evaluated on 96 held-out LEDGAR test clauses (12 per category) on CPU after permanent LoRA weight merging:
+
+### Summary Metrics
+- **Test Accuracy:** 77.08%
+- **Macro F1-Score:** 0.7439
+- **Effective Trainable Parameters:** 448,512 / 124,445,952 (0.3604%)
+- **Merged Inference Latency (CPU):** 71.91 ms/clause (13.91 clauses/s)
+- **Automated Test Suite (`pytest`):** 9 passed
+
+
