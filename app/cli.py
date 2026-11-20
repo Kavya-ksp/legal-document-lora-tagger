@@ -1,7 +1,7 @@
 """Command-line entry point: `python -m app.cli --help`."""
 import argparse
 
-from app.core import milestone_1
+from app.core import milestone_1, milestone_2
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -15,12 +15,20 @@ def main(argv: list[str] | None = None) -> None:
     prep = sub.add_parser("prepare", help="Milestone 1: prepare legal clause dataset")
     prep.add_argument("--samples-per-class", type=int, default=120)
 
+    sub.add_parser("extend", help="Milestone 2: extend GPT-2 tokenizer and model with custom tags")
+
     args = parser.parse_args(argv)
     if args.command == "hello":
         print("Legal Document LoRA Tagger is ready. Open README.md for your milestones.")
     elif args.command == "prepare":
         stats = milestone_1(samples_per_class=args.samples_per_class)
         print(f"Prepared dataset: {stats}")
+    elif args.command == "extend":
+        res = milestone_2()
+        print(
+            f"Extended GPT-2 vocab: {res['orig_vocab_size']} -> {res['new_vocab_size']} | "
+            f"Tag IDs: {res['tag_to_id']}"
+        )
 
 
 if __name__ == "__main__":

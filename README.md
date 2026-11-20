@@ -16,7 +16,7 @@ Tick these off as you go, and commit after each one.
 
 - [X] **1. Prepare a dataset of legal clauses for tagging**  
       Hint: Prepare your dataset, ensuring legal clauses are ready for tagging.
-- [ ] **2. Extend GPT-2 tokenizer and model for custom tags**  
+- [X] **2. Extend GPT-2 tokenizer and model for custom tags**  
       Hint: Extend the GPT-2 tokenizer and model to include your custom tag tokens, similar to the `lfllm-lflegalgpt` drill.
 - [ ] **3. Implement LoRA adapter and inject into GPT-2**  
       Hint: Implement the LoRA adapter and inject it into GPT-2's attention layers, as shown in the `lfllm-lflora` drill.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 TARGET_TAGS = [
     "Governing Laws",
@@ -156,9 +157,34 @@ def milestone_1(
 
 
 # --- Milestone 2: Extend GPT-2 tokenizer and model for custom tags
-def milestone_2():  # TODO(milestone 2)
-    raise NotImplementedError("TODO(milestone 2)")
+def milestone_2(
+    model_name: str = "gpt2",
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Extend GPT-2 tokenizer and token embeddings with custom atomic <Tag> tokens."""
+    active_tags = tags or TARGET_TAGS
+    special_tags = [tag_token(label) for label in active_tags]
 
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    orig_vocab_size = len(tokenizer)
+    tokenizer.add_special_tokens({"additional_special_tokens": special_tags})
+    new_vocab_size = len(tokenizer)
+
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    model.resize_token_embeddings(new_vocab_size)
+
+    tag_to_id = {tag: tokenizer.convert_tokens_to_ids(tag) for tag in special_tags}
+    return {
+        "tokenizer": tokenizer,
+        "model": model,
+        "tag_tokens": special_tags,
+        "tag_to_id": tag_to_id,
+        "orig_vocab_size": orig_vocab_size,
+        "new_vocab_size": new_vocab_size,
+    }
 
 # --- Milestone 3: Implement LoRA adapter and inject into GPT-2
 def milestone_3():  # TODO(milestone 3)

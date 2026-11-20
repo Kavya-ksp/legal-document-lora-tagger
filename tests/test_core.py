@@ -22,9 +22,18 @@ def test_milestone_1(tmp_path):
 
 
 # Milestone 2: Extend GPT-2 tokenizer and model for custom tags
-@pytest.mark.skip(reason="remove this line when you start milestone 2")
 def test_milestone_2():
-    raise NotImplementedError("write the test for milestone 2")
+    from app.core import milestone_2
+
+    res = milestone_2()
+    tokenizer = res["tokenizer"]
+    model = res["model"]
+
+    assert res["new_vocab_size"] == res["orig_vocab_size"] + len(TARGET_TAGS)
+    assert model.get_input_embeddings().weight.shape[0] == res["new_vocab_size"]
+    for tag, token_id in res["tag_to_id"].items():
+        # Each custom <Tag> must encode as a single atomic token ID
+        assert tokenizer.encode(tag, add_special_tokens=False) == [token_id]
 
 
 # Milestone 3: Implement LoRA adapter and inject into GPT-2
