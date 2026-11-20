@@ -37,10 +37,27 @@ def test_milestone_2():
 
 
 # Milestone 3: Implement LoRA adapter and inject into GPT-2
-@pytest.mark.skip(reason="remove this line when you start milestone 3")
 def test_milestone_3():
-    raise NotImplementedError("write the test for milestone 3")
+    import torch
+    from app.core import LoRAConv1D, milestone_2, milestone_3
 
+    m2 = milestone_2()
+    model = m2["model"]
+    model.eval()
+    sample_ids = torch.tensor([[50257, 100, 200]])
+    with torch.no_grad():
+        logits_before = model(sample_ids).logits.clone()
+
+    res = milestone_3(model=model, tokenizer=m2["tokenizer"], rank=4, alpha=8)
+    assert res["injected_layers"] == 24  # 12 blocks * (c_attn + c_proj)
+    assert isinstance(res["model"].transformer.h[0].attn.c_attn, LoRAConv1D)
+    assert res["lora_only_params"] < 250_000
+
+    # Because lora_B is zero-initialized, initial forward pass must match base GPT-2 identically
+    res["model"].eval()
+    with torch.no_grad():
+        logits_after = res["model"](sample_ids).logits
+    assert torch.allclose(logits_before, logits_after, atol=1e-5)
 
 # Milestone 4: Fine-tune GPT-2 with LoRA on the clause dataset
 @pytest.mark.skip(reason="remove this line when you start milestone 4")

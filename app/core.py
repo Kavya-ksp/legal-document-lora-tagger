@@ -5,6 +5,9 @@ import json
 from pathlib import Path
 from typing import Any
 from transformers import AutoModelForCausalLM, AutoTokenizer
+import math
+import torch
+import torch.nn as nn
 
 TARGET_TAGS = [
     "Governing Laws",
@@ -186,10 +189,82 @@ def milestone_2(
         "new_vocab_size": new_vocab_size,
     }
 
-# --- Milestone 3: Implement LoRA adapter and inject into GPT-2
-def milestone_3():  # TODO(milestone 3)
-    raise NotImplementedError("TODO(milestone 3)")
+class LoRAConv1D(nn.Module):
+    """Low-Rank Adaptation wrapper for GPT-2's Conv1D layers (weight shape: in_features x out_features)."""
 
+    def __init__(self, base_layer: nn.Module, rank: int = 8, alpha: int = 16):
+        super().__init__()
+        self.base_layer = base_layer
+        in_features, out_features = base_layer.weight.shape
+        self.rank = rank
+        self.alpha = alpha
+        self.scaling = alpha / rank
+
+        for param in self.base_layer.parameters():
+            param.requires_grad = False
+
+        self.lora_A = nn.Parameter(torch.empty(in_features, rank))
+        self.lora_B = nn.Parameter(torch.zeros(rank, out_features))
+        nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        base_out = self.base_layer(x)
+        lora_out = (x @ self.lora_A @ self.lora_B) * self.scaling
+        return base_out + lora_out
+
+
+def count_parameters(model: nn.Module) -> tuple[int, int]:
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return trainable, total
+
+
+# --- Milestone 3: Implement LoRA adapter and inject into GPT-2
+def milestone_3(
+    model: nn.Module | None = None,
+    tokenizer: Any | None = None,
+    rank: int = 8,
+    alpha: int = 16,
+    target_c_proj: bool = True,
+) -> dict[str, Any]:
+    """Freeze base GPT-2, inject LoRAConv1D into attention layers, and keep tag embeddings trainable."""
+    if model is None or tokenizer is None:
+        m2 = milestone_2()
+        model = m2["model"]
+        tokenizer = m2["tokenizer"]
+
+    # 1. Freeze all base parameters first
+    for param in model.parameters():
+        param.requires_grad = False
+
+    # 2. Inject LoRAConv1D into every transformer block's attention layers
+    injected_layers = 0
+    for block in model.transformer.h:
+        if not isinstance(block.attn.c_attn, LoRAConv1D):
+            block.attn.c_attn = LoRAConv1D(block.attn.c_attn, rank=rank, alpha=alpha)
+            injected_layers += 1
+        if target_c_proj and not isinstance(block.attn.c_proj, LoRAConv1D):
+            block.attn.c_proj = LoRAConv1D(block.attn.c_proj, rank=rank, alpha=alpha)
+            injected_layers += 1
+
+    # 3. Unfreeze token embeddings so the newly added <Tag> rows can learn
+    model.transformer.wte.weight.requires_grad = True
+
+    trainable_params, total_params = count_parameters(model)
+    lora_only_params = sum(
+        p.numel() for name, p in model.named_parameters() if p.requires_grad and "lora_" in name
+    )
+    return {
+        "model": model,
+        "tokenizer": tokenizer,
+        "rank": rank,
+        "alpha": alpha,
+        "injected_layers": injected_layers,
+        "lora_only_params": lora_only_params,
+        "trainable_params": trainable_params,
+        "total_params": total_params,
+        "trainable_pct": round(100.0 * trainable_params / total_params, 4),
+    }
 
 # --- Milestone 4: Fine-tune GPT-2 with LoRA on the clause dataset
 def milestone_4():  # TODO(milestone 4)
