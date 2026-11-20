@@ -2,12 +2,23 @@
 
 They start skipped. Remove the `skip` line as you work on each milestone.
 """
+import json
 import pytest
 
+from app.core import TARGET_TAGS, milestone_1
+
+
 # Milestone 1: Prepare a dataset of legal clauses for tagging
-@pytest.mark.skip(reason="remove this line when you start milestone 1")
-def test_milestone_1():
-    raise NotImplementedError("write the test for milestone 1")
+def test_milestone_1(tmp_path):
+    stats = milestone_1(output_dir=tmp_path, samples_per_class=3, use_hf=False)
+    assert stats["tags"] == TARGET_TAGS
+    assert stats["train"] > 0 and stats["val"] > 0 and stats["test"] > 0
+    for split in ("train", "val", "test"):
+        lines = (tmp_path / f"{split}.jsonl").read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == stats[split]
+        first = json.loads(lines[0])
+        assert first["prompt"].startswith("Clause: ")
+        assert f"\nTag: <{first['label']}>" in first["prompt"]
 
 
 # Milestone 2: Extend GPT-2 tokenizer and model for custom tags
