@@ -4,7 +4,7 @@
 
 A CLI-based NLP pipeline that fine-tunes GPT-2 (124M parameters) using Low-Rank Adaptation (**LoRA**) to classify legal contract clauses into canonical categories, assisting public sector clerks in reviewing public records faster with minimal compute overhead.
 
-## Completed Milestones
+## Milestones
 
 - [x] **1. Prepare a dataset of legal clauses for tagging** — Stratified 960 clauses (120 per class, seed `42`) across 8 legal categories from Hugging Face `lex_glue` (`LEDGAR`) into 80/10/10 train/validation/test splits.
 - [x] **2. Extend GPT-2 tokenizer and model for custom tags** — Added 8 atomic `<Tag>` tokens (`<Governing Laws>`, `<Confidentiality>`, `<Termination>`, `<Indemnification>`, `<Notices>`, `<Warranties>`, `<Payments>`, `<Severability>`), expanding vocabulary from `50,257` to `50,265`.
