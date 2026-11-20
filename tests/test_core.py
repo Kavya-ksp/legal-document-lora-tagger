@@ -60,9 +60,24 @@ def test_milestone_3():
     assert torch.allclose(logits_before, logits_after, atol=1e-5)
 
 # Milestone 4: Fine-tune GPT-2 with LoRA on the clause dataset
-@pytest.mark.skip(reason="remove this line when you start milestone 4")
-def test_milestone_4():
-    raise NotImplementedError("write the test for milestone 4")
+def test_milestone_4(tmp_path):
+    from app.core import milestone_1, milestone_4
+
+    data_dir = tmp_path / "data"
+    out_dir = tmp_path / "artifacts"
+    milestone_1(output_dir=data_dir, samples_per_class=3, use_hf=False)
+
+    res = milestone_4(
+        data_dir=data_dir,
+        output_dir=out_dir,
+        epochs=1,
+        batch_size=4,
+        rank=4,
+        alpha=8,
+        max_steps=3,
+    )
+    assert res["final_train_loss"] > 0
+    assert (out_dir / "lora_adapter.pt").exists()
 
 
 # Milestone 5: Merge LoRA adapter and perform inference on new clauses

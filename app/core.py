@@ -8,6 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import math
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader, Dataset
 
 TARGET_TAGS = [
     "Governing Laws",
@@ -266,9 +267,184 @@ def milestone_3(
         "trainable_pct": round(100.0 * trainable_params / total_params, 4),
     }
 
+
+class ClauseTagDataset(Dataset):
+    """Tokenizes legal clauses and masks loss so gradients only flow from the target <Tag> token."""
+
+    def __init__(self, rows: list[dict[str, str]], tokenizer: Any, max_length: int = 192):
+        self.samples: list[tuple[list[int], list[int]]] = []
+        eos_id = tokenizer.eos_token_id
+
+        for row in rows:
+            clean_clause = " ".join(row["text"].strip().split())
+            prefix = f"Clause: {clean_clause}\nTag:"
+            target_str = f" {tag_token(row['label'])}"
+
+            prefix_ids = tokenizer.encode(prefix, add_special_tokens=False)
+            target_ids = tokenizer.encode(target_str, add_special_tokens=False) + [eos_id]
+
+            max_prefix = max_length - len(target_ids)
+            if len(prefix_ids) > max_prefix:
+                prefix_ids = prefix_ids[:max_prefix]
+
+            input_ids = prefix_ids + target_ids
+            labels = ([-100] * len(prefix_ids)) + target_ids
+            self.samples.append((input_ids, labels))
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> tuple[list[int], list[int]]:
+        return self.samples[idx]
+
+
+def _collate_clause_batch(batch: list[tuple[list[int], list[int]]], pad_id: int) -> dict[str, torch.Tensor]:
+    max_len = max(len(x[0]) for x in batch)
+    input_ids, attention_mask, labels = [], [], []
+    for ids, lbls in batch:
+        pad_len = max_len - len(ids)
+        input_ids.append(ids + [pad_id] * pad_len)
+        attention_mask.append([1] * len(ids) + [0] * pad_len)
+        labels.append(lbls + [-100] * pad_len)
+    return {
+        "input_ids": torch.tensor(input_ids, dtype=torch.long),
+        "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
+        "labels": torch.tensor(labels, dtype=torch.long),
+    }
+
+
+def _load_jsonl(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
 # --- Milestone 4: Fine-tune GPT-2 with LoRA on the clause dataset
-def milestone_4():  # TODO(milestone 4)
-    raise NotImplementedError("TODO(milestone 4)")
+def milestone_4(
+    data_dir: str | Path = "data/processed",
+    output_dir: str | Path = "artifacts",
+    epochs: int = 3,
+    batch_size: int = 8,
+    lr: float = 5e-4,
+    rank: int = 8,
+    alpha: int = 16,
+    max_length: int = 192,
+    max_steps: int | None = None,
+) -> dict[str, Any]:
+    """Fine-tune LoRA-injected GPT-2 using masked loss on <Tag> tokens and save adapter checkpoint."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    data_path = Path(data_dir)
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    m2 = milestone_2()
+    orig_vocab_size = m2["orig_vocab_size"]
+    m3 = milestone_3(model=m2["model"], tokenizer=m2["tokenizer"], rank=rank, alpha=alpha)
+    model = m3["model"].to(device)
+    tokenizer = m3["tokenizer"]
+
+    # Freeze base vocabulary rows (0..orig_vocab_size-1) so only new <Tag> embeddings update
+    def _mask_base_vocab_grad(grad: torch.Tensor) -> torch.Tensor:
+        masked = grad.clone()
+        masked[:orig_vocab_size] = 0.0
+        return masked
+
+    hook_handle = model.transformer.wte.weight.register_hook(_mask_base_vocab_grad)
+
+    train_rows = _load_jsonl(data_path / "train.jsonl")
+    val_rows = _load_jsonl(data_path / "val.jsonl")
+
+    train_ds = ClauseTagDataset(train_rows, tokenizer, max_length=max_length)
+    val_ds = ClauseTagDataset(val_rows, tokenizer, max_length=max_length)
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        shuffle=True,
+        collate_fn=lambda b: _collate_clause_batch(b, tokenizer.pad_token_id),
+    )
+    val_loader = DataLoader(
+        val_ds,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=lambda b: _collate_clause_batch(b, tokenizer.pad_token_id),
+    )
+
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr, weight_decay=0.01)
+
+    history: list[dict[str, float]] = []
+    global_step = 0
+
+    try:
+        for epoch in range(1, epochs + 1):
+            model.train()
+            total_train_loss = 0.0
+            train_batches = 0
+
+            for batch in train_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                optimizer.zero_grad()
+                outputs = model(**batch)
+                loss = outputs.loss
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+
+                total_train_loss += loss.item()
+                train_batches += 1
+                global_step += 1
+                if max_steps is not None and global_step >= max_steps:
+                    break
+
+            model.eval()
+            total_val_loss = 0.0
+            val_batches = 0
+            with torch.no_grad():
+                for batch in val_loader:
+                    batch = {k: v.to(device) for k, v in batch.items()}
+                    total_val_loss += model(**batch).loss.item()
+                    val_batches += 1
+
+            avg_train = total_train_loss / max(1, train_batches)
+            avg_val = total_val_loss / max(1, val_batches)
+            history.append({"epoch": epoch, "train_loss": round(avg_train, 4), "val_loss": round(avg_val, 4)})
+            print(f"Epoch {epoch}/{epochs} | train_loss={avg_train:.4f} | val_loss={avg_val:.4f}")
+
+            if max_steps is not None and global_step >= max_steps:
+                break
+    finally:
+        hook_handle.remove()
+
+    # Save only LoRA weights + newly learned <Tag> embedding rows
+    lora_state = {
+        name: param.detach().cpu()
+        for name, param in model.state_dict().items()
+        if "lora_" in name
+    }
+    tag_embeddings = model.transformer.wte.weight[orig_vocab_size:].detach().cpu()
+
+    checkpoint_path = out_path / "lora_adapter.pt"
+    torch.save(
+        {
+            "rank": rank,
+            "alpha": alpha,
+            "orig_vocab_size": orig_vocab_size,
+            "tags": TARGET_TAGS,
+            "lora_state_dict": lora_state,
+            "tag_embeddings": tag_embeddings,
+            "history": history,
+        },
+        checkpoint_path,
+    )
+
+    return {
+        "device": str(device),
+        "epochs_completed": len(history),
+        "initial_train_loss": history[0]["train_loss"],
+        "final_train_loss": history[-1]["train_loss"],
+        "final_val_loss": history[-1]["val_loss"],
+        "checkpoint_path": str(checkpoint_path),
+        "checkpoint_size_kb": round(checkpoint_path.stat().st_size / 1024, 1),
+    }
 
 
 # --- Milestone 5: Merge LoRA adapter and perform inference on new clauses

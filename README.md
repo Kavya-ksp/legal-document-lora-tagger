@@ -20,7 +20,7 @@ Tick these off as you go, and commit after each one.
       Hint: Extend the GPT-2 tokenizer and model to include your custom tag tokens, similar to the `lfllm-lflegalgpt` drill.
 - [X] **3. Implement LoRA adapter and inject into GPT-2**  
       Hint: Implement the LoRA adapter and inject it into GPT-2's attention layers, as shown in the `lfllm-lflora` drill.
-- [ ] **4. Fine-tune GPT-2 with LoRA on the clause dataset**  
+- [X] **4. Fine-tune GPT-2 with LoRA on the clause dataset**  
       Hint: Fine-tune GPT-2 using the LoRA adapter on your prepared clause dataset, applying techniques from `lfllm-lflegalgpt` and `lfllm-lflora`.
 - [ ] **5. Merge LoRA adapter and perform inference on new clauses**  
       Hint: Merge the LoRA adapter weights back into the base GPT-2 model and perform inference on new legal clauses.

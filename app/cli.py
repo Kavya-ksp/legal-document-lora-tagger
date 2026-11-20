@@ -1,7 +1,7 @@
 """Command-line entry point: `python -m app.cli --help`."""
 import argparse
 
-from app.core import milestone_1, milestone_2, milestone_3
+from app.core import milestone_1, milestone_2, milestone_3, milestone_4
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -20,6 +20,13 @@ def main(argv: list[str] | None = None) -> None:
     lora_cmd = sub.add_parser("inject-lora", help="Milestone 3: inject LoRA adapters into GPT-2")
     lora_cmd.add_argument("--rank", type=int, default=8)
     lora_cmd.add_argument("--alpha", type=int, default=16)
+
+    train_cmd = sub.add_parser("train", help="Milestone 4: fine-tune GPT-2 with LoRA on legal clauses")
+    train_cmd.add_argument("--epochs", type=int, default=3)
+    train_cmd.add_argument("--batch-size", type=int, default=8)
+    train_cmd.add_argument("--lr", type=float, default=5e-4)
+    train_cmd.add_argument("--rank", type=int, default=8)
+    train_cmd.add_argument("--alpha", type=int, default=16)
 
     args = parser.parse_args(argv)
     if args.command == "hello":
@@ -41,6 +48,15 @@ def main(argv: list[str] | None = None) -> None:
             f"Total trainable (incl. embeddings): {res['trainable_params']:,} / {res['total_params']:,} "
             f"({res['trainable_pct']}%)"
         )
+    elif args.command == "train":
+        res = milestone_4(
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            lr=args.lr,
+            rank=args.rank,
+            alpha=args.alpha,
+        )
+        print(f"Training complete: {res}")
 
 
 if __name__ == "__main__":
