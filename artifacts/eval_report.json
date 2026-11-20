@@ -1,0 +1,63 @@
+{
+  "device": "cpu",
+  "test_samples": 96,
+  "accuracy": 0.7708,
+  "macro_f1": 0.7439,
+  "total_model_params": 124445952,
+  "lora_params": 442368,
+  "new_tag_embedding_params": 6144,
+  "effective_trainable_params": 448512,
+  "trainable_param_pct": 0.3604,
+  "avg_latency_ms_per_clause": 71.91,
+  "throughput_clauses_per_sec": 13.91,
+  "per_class": {
+    "Governing Laws": {
+      "precision": 1.0,
+      "recall": 0.6667,
+      "f1": 0.8,
+      "support": 12
+    },
+    "Confidentiality": {
+      "precision": 1.0,
+      "recall": 0.8333,
+      "f1": 0.9091,
+      "support": 12
+    },
+    "Termination": {
+      "precision": 0.4,
+      "recall": 1.0,
+      "f1": 0.5714,
+      "support": 12
+    },
+    "Indemnification": {
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571,
+      "support": 12
+    },
+    "Notices": {
+      "precision": 1.0,
+      "recall": 0.9167,
+      "f1": 0.9565,
+      "support": 12
+    },
+    "Warranties": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "Payments": {
+      "precision": 0.75,
+      "recall": 1.0,
+      "f1": 0.8571,
+      "support": 12
+    },
+    "Severability": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "support": 12
+    }
+  }
+}

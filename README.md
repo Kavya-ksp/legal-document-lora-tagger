@@ -2,56 +2,31 @@
 
 [![Built with askThili](https://ask.thili.ai/api/v1/public/projects/fuk4wxhzux/badge.svg)](https://ask.thili.ai/b/fuk4wxhzux)
 
-This project develops a Legal Document LoRA Tagger, a tool designed to assist public sector clerks. By fine-tuning GPT-2 with LoRA, it automates the classification of legal clauses in public records, enhancing efficiency and reducing the need for manual review.
+A CLI-based NLP pipeline that fine-tunes GPT-2 (124M parameters) using Low-Rank Adaptation (**LoRA**) to classify legal contract clauses into canonical categories, assisting public sector clerks in reviewing public records faster with minimal compute overhead.
 
-## What you are building
+## Completed Milestones
 
-**Goal.** You will build a tool that uses LoRA to fine-tune GPT-2 to tag legal clauses in public records, resulting in a tagged legal document.
+- [x] **1. Prepare a dataset of legal clauses for tagging** — Stratified 960 clauses (120 per class, seed `42`) across 8 legal categories from Hugging Face `lex_glue` (`LEDGAR`) into 80/10/10 train/validation/test splits.
+- [x] **2. Extend GPT-2 tokenizer and model for custom tags** — Added 8 atomic `<Tag>` tokens (`<Governing Laws>`, `<Confidentiality>`, `<Termination>`, `<Indemnification>`, `<Notices>`, `<Warranties>`, `<Payments>`, `<Severability>`), expanding vocabulary from `50,257` to `50,265`.
+- [x] **3. Implement LoRA adapter and inject into GPT-2** — Built custom `LoRAConv1D` modules (`rank=8`, `alpha=16`) and injected them into all 24 GPT-2 attention projection layers (`c_attn` and `c_proj`).
+- [x] **4. Fine-tune GPT-2 with LoRA on the clause dataset** — Trained LoRA weights and new `<Tag>` embedding rows (`0.3604%` of total model parameters) for 3 epochs using masked next-token cross-entropy loss (`val_loss` converged from `0.7693` to `0.0463`).
+- [x] **5. Merge LoRA adapter and perform inference on new clauses** — Permanently folded $W_0 + \frac{\alpha}{r}(A \cdot B)$ back into base GPT-2 `Conv1D` weights for zero-overhead inference.
+- [x] **6. Evaluate tagging accuracy and model efficiency** — Benchmarked held-out test accuracy, Macro-F1, parameter efficiency, and CPU inference latency, saving structured metrics to `artifacts/eval_report.json`.
 
-**Done when.** The project is complete when you have a fine-tuned GPT-2 model with a LoRA adapter that can classify legal contract clauses by type, and you have performed inference to produce a tagged legal document.
+## Setup
 
-## Milestones
-
-Tick these off as you go, and commit after each one.
-
-- [X] **1. Prepare a dataset of legal clauses for tagging**  
-      Hint: Prepare your dataset, ensuring legal clauses are ready for tagging.
-- [X] **2. Extend GPT-2 tokenizer and model for custom tags**  
-      Hint: Extend the GPT-2 tokenizer and model to include your custom tag tokens, similar to the `lfllm-lflegalgpt` drill.
-- [X] **3. Implement LoRA adapter and inject into GPT-2**  
-      Hint: Implement the LoRA adapter and inject it into GPT-2's attention layers, as shown in the `lfllm-lflora` drill.
-- [X] **4. Fine-tune GPT-2 with LoRA on the clause dataset**  
-      Hint: Fine-tune GPT-2 using the LoRA adapter on your prepared clause dataset, applying techniques from `lfllm-lflegalgpt` and `lfllm-lflora`.
-- [X] **5. Merge LoRA adapter and perform inference on new clauses**  
-      Hint: Merge the LoRA adapter weights back into the base GPT-2 model and perform inference on new legal clauses.
-- [X] **6. Evaluate tagging accuracy and model efficiency**  
-      Hint: Evaluate the accuracy of your tagging and the efficiency improvements gained from using LoRA.
-
-## Run it
-
-You need Python 3.12 and git.
+Requires Python 3.12+ and `git`.
 
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate
+python -m venv .venv
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+# macOS/Linux:
+# source .venv/bin/activate
+
 pip install -r requirements.txt
-cp .env.example .env        # then choose a model; see the comments inside
-python -m app.cli hello
 pytest
-```
 
-Your work goes in `app/core.py` (one stub per milestone) and `tests/test_core.py`. The first tests pass already; they
-check the plumbing.
-
-## Settings and secrets
-
-Model settings live in `.env`, which is ignored by git. **Never commit `.env` or paste a key into code.** If a key ever
-reaches GitHub, treat it as leaked and make a new one.
-
-## Stretch ideas
-
-- Experiment with different LoRA ranks or target layers to optimize performance.
-- Implement a user interface for easier document input and tagged output viewing.
-- Extend the model to recognize and tag a wider variety of legal clause types beyond the initial dataset.
 
 
 ## CLI Usage
@@ -91,3 +66,21 @@ Evaluated on 96 held-out LEDGAR test clauses (12 per category) on CPU after perm
 - **Automated Test Suite (`pytest`):** 9 passed
 
 
+### Per-Class Performance
+
+| Category | Precision | Recall | F1-Score | Support |
+| :--- | :---: | :---: | :---: | :---: |
+| Governing Laws | 1.00 | 0.67 | 0.80 | 12 |
+| Confidentiality | 1.00 | 0.83 | 0.91 | 12 |
+| Termination | 0.40 | 1.00 | 0.57 | 12 |
+| Indemnification | 1.00 | 0.75 | 0.86 | 12 |
+| Notices | 1.00 | 0.92 | 0.96 | 12 |
+| Warranties | 1.00 | 1.00 | 1.00 | 12 |
+| Payments | 0.75 | 1.00 | 0.86 | 12 |
+| Severability | 0.00 | 0.00 | 0.00 | 12 |
+
+### Critical Self-Evaluation
+
+- **Strengths:** With only **0.3604%** of GPT-2's weights updated, the merged model achieves `0.80–1.00` F1 across 6 of the 8 clause categories (`Warranties` at `1.00`, `Notices` at `0.96`, `Confidentiality` at `0.91`) while maintaining fast CPU throughput (`13.91 clauses/s`) with zero runtime adapter overhead.
+- **Limitations & Error Analysis:** `Severability` (`0.00` F1) was consistently predicted as `Termination` (`0.40` precision, `1.00` recall). Both clause types share heavy legal boilerplate around contract invalidity, unenforceable provisions, and survival/termination of agreements, and 3 epochs with `rank=8` were insufficient for the newly initialized `<Severability>` embedding to separate from `<Termination>`.
+- **Next Steps:** Training for 5+ epochs, increasing LoRA rank (`r=16`), or adding contrastive hard-negative examples between `Severability` and `Termination` would directly resolve this confusion.
