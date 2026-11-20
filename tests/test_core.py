@@ -104,7 +104,25 @@ def test_milestone_5(tmp_path):
     assert 0.0 <= res["predictions"][0]["confidence"] <= 1.0
 
 # Milestone 6: Evaluate tagging accuracy and model efficiency
-@pytest.mark.skip(reason="remove this line when you start milestone 6")
-def test_milestone_6():
-    raise NotImplementedError("write the test for milestone 6")
+def test_milestone_6(tmp_path):
+    from app.core import milestone_1, milestone_4, milestone_6
+
+    data_dir = tmp_path / "data"
+    out_dir = tmp_path / "artifacts"
+    report_path = out_dir / "eval_report.json"
+
+    milestone_1(output_dir=data_dir, samples_per_class=3, use_hf=False)
+    milestone_4(data_dir=data_dir, output_dir=out_dir, epochs=1, batch_size=4, rank=4, alpha=8, max_steps=2)
+
+    report = milestone_6(
+        data_dir=data_dir,
+        checkpoint_path=out_dir / "lora_adapter.pt",
+        report_path=report_path,
+    )
+    assert report_path.exists()
+    assert 0.0 <= report["accuracy"] <= 1.0
+    assert 0.0 <= report["macro_f1"] <= 1.0
+    assert report["trainable_param_pct"] < 1.0
+    assert report["avg_latency_ms_per_clause"] > 0
+    assert set(report["per_class"].keys()) == set(TARGET_TAGS)
 

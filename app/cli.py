@@ -1,7 +1,7 @@
 """Command-line entry point: `python -m app.cli --help`."""
 import argparse
 
-from app.core import milestone_1, milestone_2, milestone_3, milestone_4, milestone_5
+from app.core import milestone_1, milestone_2, milestone_3, milestone_4, milestone_5, milestone_6
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> None:
     tag_cmd = sub.add_parser("tag", help="Milestone 5: merge LoRA adapter and classify legal clauses")
     tag_cmd.add_argument("--clause", type=str, default=None, help="Single custom legal clause to classify")
     tag_cmd.add_argument("--checkpoint", type=str, default="artifacts/lora_adapter.pt")
+
+    eval_cmd = sub.add_parser("evaluate", help="Milestone 6: evaluate tagging accuracy and model efficiency")
+    eval_cmd.add_argument("--data-dir", type=str, default="data/processed")
+    eval_cmd.add_argument("--checkpoint", type=str, default="artifacts/lora_adapter.pt")
+    eval_cmd.add_argument("--report", type=str, default="artifacts/eval_report.json")
 
     args = parser.parse_args(argv)
     if args.command == "hello":
@@ -66,6 +71,25 @@ def main(argv: list[str] | None = None) -> None:
         res = milestone_5(clauses=clauses, checkpoint_path=args.checkpoint)
         for item in res["predictions"]:
             print(f"[{item['predicted_tag']}] ({item['confidence']*100:.1f}%) -> {item['clause']}")
+    elif args.command == "evaluate":
+        report = milestone_6(
+            data_dir=args.data_dir,
+            checkpoint_path=args.checkpoint,
+            report_path=args.report,
+        )
+        print(
+            f"Evaluation ({report['test_samples']} test clauses on {report['device']}): "
+            f"Accuracy={report['accuracy']*100:.2f}% | Macro-F1={report['macro_f1']:.4f} | "
+            f"Trainable Params={report['effective_trainable_params']:,}/{report['total_model_params']:,} "
+            f"({report['trainable_param_pct']}%) | "
+            f"Latency={report['avg_latency_ms_per_clause']} ms/clause "
+            f"({report['throughput_clauses_per_sec']} clauses/s)"
+        )
+        for tag, metrics in report["per_class"].items():
+            print(
+                f"  - {tag:<16}: P={metrics['precision']:.2f}, R={metrics['recall']:.2f}, "
+                f"F1={metrics['f1']:.2f} (n={metrics['support']})"
+            )
 
 
 if __name__ == "__main__":

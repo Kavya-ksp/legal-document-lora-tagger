@@ -9,6 +9,7 @@ import math
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
+import time
 
 TARGET_TAGS = [
     "Governing Laws",
@@ -560,5 +561,87 @@ def milestone_5(
 
 
 # --- Milestone 6: Evaluate tagging accuracy and model efficiency
-def milestone_6():  # TODO(milestone 6)
-    raise NotImplementedError("TODO(milestone 6)")
+def milestone_6(
+    data_dir: str | Path = "data/processed",
+    checkpoint_path: str | Path = "artifacts/lora_adapter.pt",
+    report_path: str | Path = "artifacts/eval_report.json",
+) -> dict[str, Any]:
+    """Evaluate held-out test accuracy, macro F1, parameter efficiency, and inference latency."""
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    bundle = load_merged_tagger(checkpoint_path=checkpoint_path)
+
+    model = bundle["model"].to(device)
+    tokenizer = bundle["tokenizer"]
+    tags = bundle["tags"]
+    tag_to_id = bundle["tag_to_id"]
+
+    test_rows = _load_jsonl(Path(data_dir) / "test.jsonl")
+
+    correct = 0
+    tp = {tag: 0 for tag in tags}
+    fp = {tag: 0 for tag in tags}
+    fn = {tag: 0 for tag in tags}
+
+    # Warm-up pass before timing
+    if test_rows:
+        predict_clause_tag(test_rows[0]["text"], model=model, tokenizer=tokenizer, tag_to_id=tag_to_id, device=device)
+
+    start_time = time.perf_counter()
+    for row in test_rows:
+        pred = predict_clause_tag(
+            row["text"], model=model, tokenizer=tokenizer, tag_to_id=tag_to_id, device=device
+        )["predicted_tag"]
+        gold = row["label"]
+        if pred == gold:
+            correct += 1
+            tp[gold] += 1
+        else:
+            fp[pred] += 1
+            fn[gold] += 1
+    elapsed_sec = max(1e-6, time.perf_counter() - start_time)
+
+    per_class: dict[str, dict[str, float]] = {}
+    f1_scores: list[float] = []
+    for tag in tags:
+        prec = tp[tag] / max(1, tp[tag] + fp[tag])
+        rec = tp[tag] / max(1, tp[tag] + fn[tag])
+        f1 = (2 * prec * rec / (prec + rec)) if (prec + rec) > 0 else 0.0
+        per_class[tag] = {
+            "precision": round(prec, 4),
+            "recall": round(rec, 4),
+            "f1": round(f1, 4),
+            "support": tp[tag] + fn[tag],
+        }
+        f1_scores.append(f1)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    lora_params = sum(v.numel() for v in ckpt["lora_state_dict"].values())
+    new_tag_emb_params = int(ckpt["tag_embeddings"].numel())
+    effective_trainable_params = lora_params + new_tag_emb_params
+
+    num_samples = len(test_rows)
+    accuracy = correct / max(1, num_samples)
+    macro_f1 = sum(f1_scores) / max(1, len(f1_scores))
+    avg_latency_ms = (elapsed_sec / max(1, num_samples)) * 1000.0
+    throughput = num_samples / elapsed_sec
+
+    report = {
+        "device": str(device),
+        "test_samples": num_samples,
+        "accuracy": round(accuracy, 4),
+        "macro_f1": round(macro_f1, 4),
+        "total_model_params": total_params,
+        "lora_params": lora_params,
+        "new_tag_embedding_params": new_tag_emb_params,
+        "effective_trainable_params": effective_trainable_params,
+        "trainable_param_pct": round(100.0 * effective_trainable_params / total_params, 4),
+        "avg_latency_ms_per_clause": round(avg_latency_ms, 2),
+        "throughput_clauses_per_sec": round(throughput, 2),
+        "per_class": per_class,
+    }
+
+    out_report = Path(report_path)
+    out_report.parent.mkdir(parents=True, exist_ok=True)
+    out_report.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    return report
